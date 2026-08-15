@@ -6,12 +6,16 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help fmt vet lint test test-race test-short coverage check \
-	build cli install tidy deps clean install-hooks tools version
+	build cli install tidy deps clean install-hooks tools \
+	release version
 
 # Build-time version stamp (git describe). Release tags are tracked in ./VERSION.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/shotah/twitter-mcp/server.ServerVersion=$(VERSION)
 CGO_ENABLED ?= 0
+
+# Release bump: patch (default), minor, or major. Or set TAG=v0.2.0 explicitly.
+BUMP ?= patch
 
 # Optional: `make test PKG=./tools/...` or `make coverage PKG=./...`
 PKG ?= ./...
@@ -22,9 +26,13 @@ EXE := .exe
 else
 EXE :=
 endif
+# go install lands here; snap/PATH often misses it (pre-commit + make fmt).
 GOBIN_DIR := $(shell go env GOBIN)
-ifeq ($(GOBIN_DIR),)
+ifeq ($(strip $(GOBIN_DIR)),)
 GOBIN_DIR := $(shell go env GOPATH)/bin
+endif
+ifneq ($(OS),Windows_NT)
+export PATH := $(GOBIN_DIR):$(PATH)
 endif
 
 ##@ Getting oriented
@@ -59,7 +67,8 @@ help: ## Show this help
 	@echo.
 	@echo Project-specific
 	@echo   install-hooks          Install git pre-commit (autofix + lint + test)
-	@echo   version                Show current VERSION file
+	@echo   version                Show current VERSION file + latest git tag
+	@echo   release                Bump tag + latest, update VERSION, push (BUMP=patch^|minor^|major)
 	@echo.
 	@echo Tooling
 	@echo   tools                  Install goimports-reviser + golangci-lint v2
@@ -89,7 +98,7 @@ test-race: ## Unit tests with the race detector (slower, worth it)
 
 # Default coverage scope excludes the stdio main.
 # Override: make coverage PKG=./...
-COVERAGE_PKG ?= ./server/... ./tools/...
+COVERAGE_PKG ?= ./server/... ./tools/... ./cmd/...
 
 coverage: ## Tests + coverage report for library packages (writes coverage.out)
 	go test -cover "-coverprofile=coverage.out" -covermode=atomic $(COVERAGE_PKG)
@@ -140,12 +149,26 @@ else
 endif
 	@echo "Installed .git/hooks/pre-commit"
 
-version: ## Show VERSION file
-	@cat VERSION
+version: ## Show VERSION file and latest git tag / next patch
+	@go run ./cmd/release -dry-run
+
+# Bump semver, commit VERSION, annotated-tag (v* + floating latest), push (triggers GoReleaser).
+# Examples:
+#   make release
+#   make release BUMP=minor
+#   make release BUMP=major
+#   make release TAG=v0.2.0
+#   make release DRY_RUN=1
+release: ## Bump version + latest tags, update VERSION, push (BUMP=patch|minor|major)
+	go run ./cmd/release \
+		$(if $(TAG),-version=$(TAG),-bump=$(BUMP)) \
+		$(if $(DRY_RUN),-dry-run,) \
+		$(if $(SKIP_PUSH),-skip-push,) \
+		$(if $(ALLOW_DIRTY),-allow-dirty,)
 
 ##@ Tooling (skip if you use nix develop / direnv)
 
 tools: ## Install goimports-reviser + golangci-lint v2 into $$GOBIN
 	go install github.com/incu6us/goimports-reviser/v3@latest
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-	@echo Installed tools. Ensure GOPATH/bin is on PATH, then: golangci-lint version
+	@echo Installed to $(GOBIN_DIR). make fmt / the pre-commit hook prepend that dir to PATH.

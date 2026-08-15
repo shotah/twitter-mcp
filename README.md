@@ -1,5 +1,9 @@
 # twitter-mcp
 
+<p align="center">
+  <img src="assets/banner.svg" alt="twitter-mcp — public X posts for the watch cursor" width="100%">
+</p>
+
 Stdio MCP server that lists public X/Twitter posts for [ai-gantry](https://github.com/shotah/ai-gantry) watches.
 
 This is **not** a poller. The kernel ticks and calls `twitter__posts_list`. Official X API v2 only — no scrape, no Nitter, no fake RSS.
@@ -63,6 +67,7 @@ Watch row: `tool = "twitter__posts_list"` `args = { handle = "foo" }`.
 make tidy
 make test
 make lint
+make release          # patch bump + VERSION + tags + push (BUMP=minor|major or TAG=v0.2.0)
 ```
 
 `CGO_ENABLED=0`. Tests use `httptest` — no live X calls.
